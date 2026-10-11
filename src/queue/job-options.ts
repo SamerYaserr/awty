@@ -1,14 +1,18 @@
 export interface JobOptions {
   expireInSeconds: number;
-  heartbeatSeconds: number;
+  retryLimit: number;
 }
 
 export function jobOptionsFor(
-  durationSeconds: number,
-  settings: { heartbeatSeconds: number; expiryGraceSeconds: number },
+  _durationSeconds: number,
+  settings: {
+    heartbeatSeconds: number;
+    expiryGraceSeconds: number;
+    maxAttempts: number;
+  },
 ): JobOptions {
   return {
-    expireInSeconds: durationSeconds + settings.expiryGraceSeconds,
-    heartbeatSeconds: settings.heartbeatSeconds,
+    expireInSeconds: settings.heartbeatSeconds + settings.expiryGraceSeconds,
+    retryLimit: Math.max(0, settings.maxAttempts - 1),
   };
 }

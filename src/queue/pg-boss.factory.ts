@@ -16,7 +16,7 @@ export function createBoss(config: AppConfig, role: QueueRole): PgBoss {
     supervise: role === 'worker',
     schedule: role === 'worker',
     monitorStateIntervalSeconds: 10,
-    maintenanceIntervalSeconds: 300,
+    maintenanceIntervalSeconds: 10,
   };
   const boss = new PgBoss(options);
   const logger = new Logger(`PgBoss:${role}`);
