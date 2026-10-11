@@ -42,6 +42,28 @@ const envSchema = z.object({
     .regex(/^[a-z_][a-z0-9_]{0,62}$/, 'must be a lowercase SQL identifier')
     .default('pgboss'),
   PGBOSS_POOL_MAX: z.coerce.number().int().min(1).max(100).default(5),
+
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100000).default(1000),
+  WORKER_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(50)
+    .max(60000)
+    .default(500),
+  WORKER_FETCH_BATCH: z.coerce.number().int().min(1).max(1000).default(50),
+  WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .default(20000),
+  PROGRESS_FLUSH_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(50)
+    .max(10000)
+    .default(250),
+  SIMULATED_FAILURE_RATE: z.coerce.number().min(0).max(1).default(0),
 });
 
 export interface AppConfig {
@@ -60,6 +82,14 @@ export interface AppConfig {
     retentionDays: number;
   };
   queue: { schema: string; poolMax: number };
+  worker: {
+    concurrency: number;
+    pollIntervalMs: number;
+    fetchBatch: number;
+    shutdownTimeoutMs: number;
+    progressFlushIntervalMs: number;
+    simulatedFailureRate: number;
+  };
 }
 
 export class ConfigError extends Error {
@@ -104,6 +134,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     queue: {
       schema: e.PGBOSS_SCHEMA,
       poolMax: e.PGBOSS_POOL_MAX,
+    },
+    worker: {
+      concurrency: e.WORKER_CONCURRENCY,
+      pollIntervalMs: e.WORKER_POLL_INTERVAL_MS,
+      fetchBatch: e.WORKER_FETCH_BATCH,
+      shutdownTimeoutMs: e.WORKER_SHUTDOWN_TIMEOUT_MS,
+      progressFlushIntervalMs: e.PROGRESS_FLUSH_INTERVAL_MS,
+      simulatedFailureRate: e.SIMULATED_FAILURE_RATE,
     },
   };
 }
