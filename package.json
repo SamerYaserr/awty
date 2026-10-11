@@ -14,6 +14,8 @@
     "start:prod": "node dist/main",
     "dev:api": "nest start --watch --entryFile main.api",
     "dev:migrate": "nest start --entryFile main.migrate",
+    "start:worker": "node dist/main.worker.js",
+    "dev:worker": "nest start --watch --entryFile main.worker",
     "migrate": "node dist/main.migrate.js"
   },
   "dependencies": {
