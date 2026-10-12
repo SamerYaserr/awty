@@ -16,7 +16,8 @@
     "dev:migrate": "nest start --entryFile main.migrate",
     "start:worker": "node dist/main.worker.js",
     "dev:worker": "nest start --watch --entryFile main.worker",
-    "migrate": "node dist/main.migrate.js"
+    "migrate": "node dist/main.migrate.js",
+    "demo": "node scripts/demo-client.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
