@@ -213,12 +213,20 @@ All settings are environment variables. The full list with defaults is in [.env.
 
 ## Commands
 
-| Command                                                 | What it does                                                                     |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `npm run build`                                         | Compile to `dist/`                                                               |
-| `npm run migrate`                                       | Create or update the schema and queues. The only process that changes the schema |
-| `npm run demo -- 10`                                    | Demo client                                                                      |
-| `node scripts/load-test.mjs --tasks 3000 --duration 20` | Load generator that only uses the public API                                     |
+| Command                                                    | What it does                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `npm run build`                                            | Compile TypeScript to `dist/`                                                    |
+| `npm run migrate`                                          | Create or update the schema and queues using compiled JavaScript                 |
+| `npm run dev:migrate`                                      | Run migrations directly with Nest CLI (no prior build step needed)               |
+| `npm run start:api`                                        | Start the API HTTP & WebSocket server                                            |
+| `npm run start:worker`                                     | Start a background worker process                                                |
+| `npm run dev:api`                                          | Start the API server in watch mode (auto-reload on change)                        |
+| `npm run dev:worker`                                       | Start a worker in watch mode (auto-reload on change)                             |
+| `npm run demo -- 10`                                       | Create a 10-second task and follow its progress in the terminal                  |
+| `npm run demo -- --watch <taskId>`                         | Follow an existing task without creating a new one                               |
+| `npm run load-test -- --tasks 3000 --duration 20`          | Load generator that tests throughput and WebSocket delivery                      |
+| `npm run format`                                           | Format code with Prettier                                                        |
+| `npm run lint`                                             | Check code with ESLint                                                           |
 
 ## Project layout
 
@@ -237,3 +245,6 @@ src/
 scripts/         demo client and load generator
 docs/adr/        architecture decision record
 ```
+
+For a file-by-file breakdown of each module and where to make changes, see [docs/codebase.md](docs/codebase.md).
+
