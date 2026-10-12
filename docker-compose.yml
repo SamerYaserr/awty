@@ -1,0 +1,76 @@
+name: awty
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: postgres://awty:awty@postgres:5432/awty
+  LOG_LEVEL: info
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: awty
+      POSTGRES_PASSWORD: awty
+      POSTGRES_DB: awty
+    command:
+      - postgres
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - autovacuum_naptime=10s
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U awty -d awty']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    image: awty:local
+    command: ['node', 'dist/main.migrate.js']
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build: .
+    image: awty:local
+    command: ['node', 'dist/main.api.js']
+    environment: *app-environment
+    ports:
+      - '3000:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health/ready']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+  worker:
+    build: .
+    image: awty:local
+    command: ['node', 'dist/main.worker.js']
+    environment: *app-environment
+    deploy:
+      replicas: 4
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
