@@ -64,6 +64,21 @@ const envSchema = z.object({
     .max(10000)
     .default(250),
   SIMULATED_FAILURE_RATE: z.coerce.number().min(0).max(1).default(0),
+
+  WS_MAX_SUBSCRIPTIONS: z.coerce.number().int().min(1).max(10000).default(100),
+  WS_PING_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(600000)
+    .default(30000),
+  WS_MAX_BUFFERED_BYTES: z.coerce.number().int().min(1024).default(1_048_576),
+  RECONCILE_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(600000)
+    .default(10000),
 });
 
 export interface AppConfig {
@@ -89,6 +104,12 @@ export interface AppConfig {
     shutdownTimeoutMs: number;
     progressFlushIntervalMs: number;
     simulatedFailureRate: number;
+  };
+  realtime: {
+    maxSubscriptions: number;
+    pingIntervalMs: number;
+    maxBufferedBytes: number;
+    reconcileIntervalMs: number;
   };
 }
 
@@ -142,6 +163,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       shutdownTimeoutMs: e.WORKER_SHUTDOWN_TIMEOUT_MS,
       progressFlushIntervalMs: e.PROGRESS_FLUSH_INTERVAL_MS,
       simulatedFailureRate: e.SIMULATED_FAILURE_RATE,
+    },
+    realtime: {
+      maxSubscriptions: e.WS_MAX_SUBSCRIPTIONS,
+      pingIntervalMs: e.WS_PING_INTERVAL_MS,
+      maxBufferedBytes: e.WS_MAX_BUFFERED_BYTES,
+      reconcileIntervalMs: e.RECONCILE_INTERVAL_MS,
     },
   };
 }
