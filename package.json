@@ -20,6 +20,7 @@
     "migrate": "node dist/main.migrate.js",
     "demo": "node scripts/demo-client.mjs",
     "load-test": "node scripts/load-test.mjs",
+    "test:e2e": "node scripts/run-e2e-tests.mjs",
     "lint": "eslint"
   },
   "dependencies": {
