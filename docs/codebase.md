@@ -22,7 +22,7 @@ src/
 ├── events/       # Message format for live progress events
 ├── health/       # Health check routes (is the app healthy?)
 ├── common/       # Helper tools used across the app (clock, rate limit, id check)
-└── scripts/      # Demo tool and load testing tool
+└── scripts/      # Demo client, load tester, and automated E2E test suite
 ```
 
 ---
@@ -147,8 +147,10 @@ This folder sets up and connects pg-boss (the job queue in PostgreSQL).
 
 | File | What it does | When to edit this file |
 | :--- | :--- | :--- |
-| [`demo-client.mjs`](../scripts/demo-client.mjs) | Terminal demo tool. Lets you start a task (`npm run demo -- 10`) or watch an existing task (`npm run demo -- --watch <taskId>`). | To change how the terminal demo displays progress. |
+| [`demo-client.mjs`](../scripts/demo-client.mjs) | Terminal demo client (`npm run demo`). Renders an interactive ASCII progress bar, status badges, and completion summary card. Handles automatic reconnection with exponential backoff and jitter, and supports `--watch`, `--raw`, and `--help`. | To customize demo UI presentation, progress bars, or client-side reconnection logic. |
 | [`load-test.mjs`](../scripts/load-test.mjs) | Heavy load testing tool. Creates thousands of tasks and connects many WebSockets to measure speed and reliability. | To change load test settings (number of tasks, number of clients, or test duration). |
+| [`run-e2e-tests.mjs`](../scripts/run-e2e-tests.mjs) | Automated end-to-end test runner (`npm run test:e2e`). Executes 37 test scenarios across 6 phases covering HTTP, WebSockets, DB constraints, concurrency, and architecture failure modes. | To add or update functional, contract, and failure mode test scenarios. |
+| [`run-e2e-tests.sh`](../scripts/run-e2e-tests.sh) | Shell wrapper launcher for the automated E2E test suite with environment variable defaults (`BASE_URL`, `WS_URL`, `DATABASE_URL`). | To change test runner execution flags or shell environment defaults. |
 
 ---
 
@@ -168,4 +170,5 @@ When you want to change something, find your goal here:
 | **Add a new WebSocket message type** | `src/realtime/protocol.ts` and `src/realtime/client-session.ts` |
 | **Add or change web routes (HTTP)** | `src/tasks/tasks.controller.ts` and `src/tasks/tasks.service.ts` |
 | **Change health check rules** | `src/health/health.controller.ts` |
+| **Add or update automated E2E tests and failure scenarios** | `scripts/run-e2e-tests.mjs` |
 | **Add a new environment setting** | `src/config/app-config.ts` and `.env.example` |

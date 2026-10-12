@@ -35,7 +35,7 @@ In this project, the work is simulated (the task waits using timers). However, t
 10. **Frameworks and libraries**: NestJS with Express handles HTTP requests. TypeORM manages basic database operations, while raw SQL handles complex updates. The `class-validator` library validates HTTP requests, and Zod validates environment settings and WebSocket messages.
 11. **Single migration command**: Only `npm run migrate` can change the database schema. API and worker services cannot modify the database tables.
 12. **Random IDs and cleanup**: Tasks use unguessable UUIDv4 IDs to stay secure and private. A background job regularly deletes old finished tasks after a set retention period.
-13. **Testing and verification**: The system was tested and measured under heavy load against a live PostgreSQL 16 database using a custom load-test script.
+13. **Testing and verification**: The system was validated against a live PostgreSQL 16 database using an automated end-to-end test suite (`scripts/run-e2e-tests.mjs`) covering all contract invariants and failure modes, alongside a high-concurrency load generator (`scripts/load-test.mjs`).
 
 ## Decisions
 
@@ -185,9 +185,10 @@ A background job (`PurgeHandler`) runs periodically to delete completed tasks ol
 
 ### 13. Testing and verification
 
-Verification relies on testing the full system against a live PostgreSQL 16 database.
+Verification relies on testing the full system against a live PostgreSQL 16 database across two complementary suites:
 
-A load-testing tool (`scripts/load-test.mjs`) tests the system under heavy load using only public HTTP and WebSocket APIs. It creates thousands of concurrent tasks, opens WebSocket subscriptions, verifies live progress updates, and confirms task completion.
+1. **Automated End-to-End & Failure Mode Suite (`scripts/run-e2e-tests.mjs`)**: An automated test harness (`npm run test:e2e`) executing 37 scenarios across 6 phases. It asserts protocol conformance (HTTP 201/200/400/404, WS subscribe/progress/completed/failed/error/unsubscribe), multi-client fanout, reconnect snapshot recovery, database check constraints, security boundaries (payload limit, rate limits, ping-pong liveness), and architectural failure modes (heartbeat loss, worker attempt claim fencing, dead-letter queue exhaust, background state reconciler catchup, retention purge, and atomic transaction rollback).
+2. **High-Concurrency Load Generator (`scripts/load-test.mjs`)**: Tests throughput, batching efficiency, and WebSocket delivery under heavy load using public APIs (`npm run load-test`). It creates thousands of concurrent tasks, opens WebSocket subscriptions, verifies monotonic progress, and confirms end-to-end task completion.
 
 ## Failure modes
 

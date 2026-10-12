@@ -19,9 +19,10 @@ Try it:
 ```bash
 npm install
 npm run demo -- 10        # create a 10 second task and follow it
+npm run test:e2e          # run automated test suite (37 tests across 6 phases)
 ```
 
-The demo client prints what the server sends. Run `npm run demo -- --watch <taskId>` in a second terminal to see two clients follow the same task.
+The demo client renders an interactive terminal progress bar with elapsed time, status badges, and a completion summary card. Run `npm run demo -- --watch <taskId>` in a second terminal to see two clients follow the same task concurrently, or pass `--raw` for raw JSON protocol frames.
 
 The same thing with curl:
 
@@ -222,9 +223,11 @@ All settings are environment variables. The full list with defaults is in [.env.
 | `npm run start:worker`                                     | Start a background worker process                                                |
 | `npm run dev:api`                                          | Start the API server in watch mode (auto-reload on change)                        |
 | `npm run dev:worker`                                       | Start a worker in watch mode (auto-reload on change)                             |
-| `npm run demo -- 10`                                       | Create a 10-second task and follow its progress in the terminal                  |
-| `npm run demo -- --watch <taskId>`                         | Follow an existing task without creating a new one                               |
+| `npm run demo -- 10`                                       | Create a 10-second task and follow its progress with a live terminal UI          |
+| `npm run demo -- --watch <taskId>`                         | Follow an existing task without creating a new one (supports `--raw`)            |
+| `npm run demo -- --help`                                   | Show all demo client flags (`--watch`, `--url`, `--raw`, `--no-color`)            |
 | `npm run load-test -- --tasks 3000 --duration 20`          | Load generator that tests throughput and WebSocket delivery                      |
+| `npm run test:e2e`                                         | Automated end-to-end test suite verifying all 6 phases, edge cases & failure modes |
 | `npm run format`                                           | Format code with Prettier                                                        |
 | `npm run lint`                                             | Check code with ESLint                                                           |
 
@@ -242,7 +245,7 @@ src/
   realtime/      WebSocket server, sessions, subscription registry, listener, reconciler
   health/        liveness and readiness
   common/        ids, clock, token bucket, chunking, logging
-scripts/         demo client and load generator
+scripts/         demo client, load generator, and automated E2E test suite
 docs/adr/        architecture decision record
 ```
 
