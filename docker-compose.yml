@@ -4,6 +4,7 @@ x-app-environment: &app-environment
   NODE_ENV: production
   DATABASE_URL: postgres://awty:awty@postgres:5432/awty
   LOG_LEVEL: info
+  # SIMULATED_FAILURE_RATE: "0.3"
 
 services:
   postgres:

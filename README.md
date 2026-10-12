@@ -1,98 +1,239 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# AWTY (Are We There Yet?)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+AWTY runs long tasks in the background and reports their progress in real time. A client submits a task, gets an id back immediately, and follows the task over a WebSocket until it finishes.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+It is built with NestJS, TypeORM, PostgreSQL and pg-boss. PostgreSQL is the only infrastructure: it stores task state, holds the job queue, and carries progress events from workers to API instances.
 
-## Description
+The reasoning behind the design is in [docs/adr/architecture.md](docs/adr/architecture.md).
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Quick start
 
 ```bash
-$ npm install
+docker compose up --build
 ```
 
-## Compile and run the project
+This starts PostgreSQL, applies the migrations, then starts the API on http://localhost:3000 and four worker processes. The first build takes a minute or two.
+
+Try it:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+npm run demo -- 10        # create a 10 second task and follow it
 ```
 
-## Run tests
+The demo client prints what the server sends. Run `npm run demo -- --watch <taskId>` in a second terminal to see two clients follow the same task.
+
+The same thing with curl:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+curl -s -X POST localhost:3000/tasks -H 'content-type: application/json' -d '{"duration": 10}'
+# {"id":"01a1...","status":"pending"}
+curl -s localhost:3000/tasks/01a1...
+# {"id":"01a1...","status":"processing","progress":40}
 ```
 
-## Deployment
+To see tasks fail, uncomment `SIMULATED_FAILURE_RATE` in `docker-compose.yml` and run `docker compose up` again.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### Without Docker
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+You need Node.js 22.13 or newer and PostgreSQL 13 or newer.
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+cp .env.example .env      # set DATABASE_URL
+npm ci
+npm run build
+npm run migrate           # tasks table, pg-boss tables, queues
+npm run start:api         # terminal 1
+npm run start:worker      # terminal 2, and as many more as you like
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Every worker process takes jobs from the same queue, so starting more of them adds capacity. `npm run dev:api` and `npm run dev:worker` run the same processes in watch mode.
 
-## Resources
+## HTTP API
 
-Check out a few resources that may come in handy when working with NestJS:
+### POST /tasks
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```http
+POST /tasks
+Content-Type: application/json
 
-## Support
+{ "duration": 10 }
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+`duration` is the number of seconds the task takes. It must be a whole number from 1 to 3600.
 
-## Stay in touch
+```http
+HTTP/1.1 201 Created
+Location: /tasks/01a1...
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+{ "id": "01a1...", "status": "pending" }
+```
 
-## License
+The request returns as soon as the task is stored and queued. It never waits for the task to run.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| Status | When                                                               |
+| ------ | ------------------------------------------------------------------ |
+| 201    | Task accepted                                                      |
+| 400    | Body is missing or `duration` is not a whole number from 1 to 3600 |
+| 500    | PostgreSQL is not reachable                                        |
+
+Error bodies use Nest's standard shape, for example `{"statusCode":400,"error":"Bad Request","message":["duration must be at most 3600 seconds"]}`.
+
+### GET /tasks/:id
+
+```http
+GET /tasks/01a1...
+
+{ "id": "01a1...", "status": "processing", "progress": 40 }
+```
+
+| status       | progress                                   |
+| ------------ | ------------------------------------------ |
+| `pending`    | 0. Waiting for a worker                    |
+| `processing` | 0 to 99, the last value the worker saved   |
+| `completed`  | 100                                        |
+| `failed`     | The last progress saved before the failure |
+
+An unknown id, or an id that is not a UUID, returns 404.
+
+### Health
+
+- `GET /health/live` returns 200 while the process is running.
+- `GET /health/ready` returns 200 when PostgreSQL answers and the event listener is connected, and 503 otherwise. Docker Compose uses it as the API health check.
+
+## WebSocket API
+
+Connect to `ws://localhost:3000/ws`, then subscribe to a task:
+
+```json
+{ "type": "subscribe", "taskId": "01a1..." }
+```
+
+The server sends these messages:
+
+```json
+{ "type": "progress", "taskId": "01a1...", "progress": 25 }
+{ "type": "completed", "taskId": "01a1..." }
+{ "type": "failed", "taskId": "01a1..." }
+{ "type": "error", "taskId": "01a1...", "message": "Task not found" }
+```
+
+`progress` and `completed` are the messages from the task description. `failed` has the same shape as `completed`. `error` answers a client message the server rejected, and `taskId` is left out when the error is not about one task.
+
+A client can also send `{ "type": "unsubscribe", "taskId": "..." }`.
+
+An example session for a 5 second task:
+
+```text
+-> {"type":"subscribe","taskId":"01a1..."}
+<- {"type":"progress","taskId":"01a1...","progress":0}
+<- {"type":"progress","taskId":"01a1...","progress":20}
+<- {"type":"progress","taskId":"01a1...","progress":40}
+<- {"type":"progress","taskId":"01a1...","progress":60}
+<- {"type":"progress","taskId":"01a1...","progress":80}
+<- {"type":"completed","taskId":"01a1..."}
+```
+
+Rules the server follows:
+
+- Subscribing always returns the current state straight away: `progress` for a pending or running task (0 while it waits), `completed` or `failed` for a finished one. That is the whole reconnect mechanism, see below.
+- Progress only goes up. A client never sees a lower value than one it already received.
+- The final message (`completed` or `failed`) is sent once. After it, the server forgets the subscription.
+- Any number of clients can subscribe to the same task and all of them receive every update.
+- Tasks run whether or not anyone is subscribed.
+- A task reports at most once per second, and at most 100 times in total.
+- A bad message gets an `error` and the connection stays open: invalid JSON, a message of another shape, a binary frame, a task id that is not a UUID, an unknown task, or more than 100 subscriptions on one connection.
+
+### Reconnecting
+
+When a connection drops, open a new one and send `subscribe` again for each task that has not finished. The reply is the current state, and updates continue from there. A client that was away for a while skips the progress values it missed, which is fine because progress is a state and not a log.
+
+`scripts/demo-client.mjs` does this with exponential backoff and jitter. Close code `1001` means the server is shutting down, so reconnect to another instance or retry shortly.
+
+### Limits and close codes
+
+| Limit                        | Value                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| Message size                 | 4 KiB                                                                                            |
+| Messages per client          | burst of 50, then 25 per second. Beyond that the connection closes with `1008`                   |
+| Subscriptions per connection | 100                                                                                              |
+| Dead connection detection    | the server pings every 30 seconds and drops clients that do not answer                           |
+| Slow client                  | progress is skipped while more than 512 KiB is queued, and the connection is dropped above 1 MiB |
+
+## How it works
+
+```text
+                 POST /tasks                              LISTEN awty_task_events
+  client ------------------> API ----+                +-----------------------> API ---- WebSocket ---> clients
+                                     |  one           |
+                                     v  transaction   |  NOTIFY, sent in the same
+                              +---------------+       |  transaction as the change
+                              |  PostgreSQL   |       |
+                              |  tasks table  | <-----+----- worker x N
+                              |  pg-boss jobs |   claim, progress, complete
+                              +---------------+
+```
+
+1. `POST /tasks` inserts the task row and the pg-boss job in one transaction. Either both exist or neither does.
+2. A worker fetches jobs from the queue and claims the task. The claim increments an `attempt` counter, which fences every later write by that worker.
+3. The worker runs the task as a timer. Every second (or every 1 percent for tasks longer than 100 seconds) it reports progress. Reports are collected and written in batches every 250 ms, and each batch sends one NOTIFY in the same statement.
+4. Every API instance listens for those notifications and forwards them to the WebSocket clients subscribed to the task.
+5. At the end the worker marks the task completed and the job done.
+
+### Failure handling
+
+| What goes wrong                                              | What happens                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A worker crashes or is killed                                | It stops refreshing its heartbeat. After the expiry window (30 second heartbeat plus 30 second grace period, plus up to 10 seconds for the next check) the queue retries the job. Another worker claims the task and continues from the last saved progress. Downtime does not count toward the duration. |
+| A worker is stopped gracefully (SIGTERM)                     | It saves progress and hands its jobs back. Another worker continues a few seconds later.                                                                                                                                                                                                                  |
+| A worker pauses for a long time and comes back               | Its claim is gone. The next write is refused because of the attempt fence and it stops without changing anything.                                                                                                                                                                                         |
+| A job runs out of attempts (5 by default)                    | The queue moves it to a dead letter queue. A worker marks the task `failed` and notifies subscribers.                                                                                                                                                                                                     |
+| The task itself fails                                        | The task becomes `failed`, subscribers get `failed`, and the job is finished without retries. Use `SIMULATED_FAILURE_RATE` to see it.                                                                                                                                                                     |
+| A worker finishes the task but dies before finishing the job | The retry finds the task already completed and finishes the job.                                                                                                                                                                                                                                          |
+| The API restarts                                             | Task state is in PostgreSQL. Clients reconnect and subscribe again.                                                                                                                                                                                                                                       |
+| The event connection drops or a notification is lost         | The API reconnects with backoff and, every 10 seconds and after each reconnect, compares each followed task with the database and sends what changed.                                                                                                                                                     |
+
+### Several workers
+
+Each task is processed by one worker at a time. pg-boss hands a job to a single consumer, and the `attempt` fence in the tasks table covers the cases where that is not enough, such as a worker that was declared dead but is still running. A worker holds up to 1000 tasks at once (`WORKER_CONCURRENCY`) because a running task is only a timer. Tasks never wait on each other. A new task starts within one poll interval (about 0.5 seconds) while capacity is free.
+
+## Configuration
+
+All settings are environment variables. The full list with defaults is in [.env.example](.env.example). The ones you are most likely to change:
+
+| Variable                  | Default     | Meaning                                                               |
+| ------------------------- | ----------- | --------------------------------------------------------------------- |
+| `DATABASE_URL`            | none        | PostgreSQL connection string. Required                                |
+| `WORKER_CONCURRENCY`      | 1000        | Tasks one worker process runs at once                                 |
+| `TASK_HEARTBEAT_SECONDS`  | 30          | How long a silent worker keeps its tasks. Minimum 10                  |
+| `TASK_MAX_ATTEMPTS`       | 5           | Attempts before a task is marked failed. Applied by `npm run migrate` |
+| `TASK_RETENTION_DAYS`     | 7           | Finished tasks are deleted after this many days                       |
+| `SIMULATED_FAILURE_RATE`  | 0           | Chance from 0 to 1 that an attempt fails on purpose                   |
+| `LOG_LEVEL`, `LOG_PRETTY` | info, false | Logs are JSON on stdout. `LOG_PRETTY=true` is easier to read locally  |
+
+## Commands
+
+| Command                                                 | What it does                                                                     |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `npm run build`                                         | Compile to `dist/`                                                               |
+| `npm run migrate`                                       | Create or update the schema and queues. The only process that changes the schema |
+| `npm run demo -- 10`                                    | Demo client                                                                      |
+| `node scripts/load-test.mjs --tasks 3000 --duration 20` | Load generator that only uses the public API                                     |
+
+## Project layout
+
+```text
+src/
+  main.api.ts, main.worker.ts, main.migrate.ts   entry points (HTTP and WebSocket, worker, schema)
+  config/        environment variables, validated once at startup
+  database/      TypeORM setup and the SQL migration for the tasks table
+  tasks/         HTTP controller, service, repository (all SQL), entity, store interfaces
+  queue/         pg-boss setup, producer, consumer adapter, transaction adapter, queue settings
+  worker/        task processor, job consumer, progress batcher, dead letter and purge handlers
+  events/        the NOTIFY payload format
+  realtime/      WebSocket server, sessions, subscription registry, listener, reconciler
+  health/        liveness and readiness
+  common/        ids, clock, token bucket, chunking, logging
+scripts/         demo client and load generator
+docs/adr/        architecture decision record
+```
