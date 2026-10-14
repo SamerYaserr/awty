@@ -114,12 +114,13 @@ The server sends these messages:
 
 ```json
 { "type": "progress", "taskId": "01a1...", "progress": 25 }
+{ "type": "pending", "taskId": "01a1...", "progress": 25 }
 { "type": "completed", "taskId": "01a1..." }
 { "type": "failed", "taskId": "01a1..." }
 { "type": "error", "taskId": "01a1...", "message": "Task not found" }
 ```
 
-`progress` and `completed` are the messages from the task description. `failed` has the same shape as `completed`. `error` answers a client message the server rejected, and `taskId` is left out when the error is not about one task.
+`progress` and `completed` are the messages from the task description. `pending` indicates the task is queued awaiting a worker (either initially or after an in-flight worker crashed and the job is awaiting retry). `failed` has the same shape as `completed`. `error` answers a client message the server rejected, and `taskId` is left out when the error is not about one task.
 
 A client can also send `{ "type": "unsubscribe", "taskId": "..." }`.
 
@@ -190,9 +191,36 @@ When a connection drops, open a new one and send `subscribe` again for each task
 | A worker pauses for a long time and comes back               | Its claim is gone. The next write is refused because of the attempt fence and it stops without changing anything.                                                                                                                                                                                         |
 | A job runs out of attempts (5 by default)                    | The queue moves it to a dead letter queue. A worker marks the task `failed` and notifies subscribers.                                                                                                                                                                                                     |
 | The task itself fails                                        | The task becomes `failed`, subscribers get `failed`, and the job is finished without retries. Use `SIMULATED_FAILURE_RATE` to see it.                                                                                                                                                                     |
+| All workers crash simultaneously and stay dead               | The API server supervises the queue. When the heartbeat expires, a database trigger (`pgboss_job_sync_trigger`) catches the timeout, immediately resets the task to `pending` (retaining progress) or marks it `failed` (recording `finished_at`), and emits `NOTIFY` directly in PostgreSQL.         |
 | A worker finishes the task but dies before finishing the job | The retry finds the task already completed and finishes the job.                                                                                                                                                                                                                                          |
 | The API restarts                                             | Task state is in PostgreSQL. Clients reconnect and subscribe again.                                                                                                                                                                                                                                       |
 | The event connection drops or a notification is lost         | The API reconnects with backoff and, every 10 seconds and after each reconnect, compares each followed task with the database and sends what changed.                                                                                                                                                     |
+
+### Zero-worker failover and database trigger (`pgboss_job_sync_trigger`)
+
+What happens if every single worker process is killed (`killall -9 node`) or crashes simultaneously?
+Normally, worker processes are responsible for claiming retries and processing dead-letter jobs (`DeadLetterHandler`). When **zero workers are running**, worker-level application code cannot run at all.
+
+AWTY solves this entirely at the database layer through the API supervisor and an atomic PostgreSQL trigger:
+
+1. **Queue supervision by the API**:
+   The API server runs pg-boss with queue supervision enabled (`supervise: role === 'worker' || role === 'api'`). Every 10 seconds, the API server executes pg-boss maintenance, sweeping for expired jobs whose heartbeats ceased (`failJobsByTimeout`).
+
+2. **Atomic synchronization trigger (`pgboss_job_sync_trigger`)**:
+   Created by migration `1760000000001-AddPgBossSyncTrigger.ts`, the trigger runs `AFTER INSERT OR UPDATE ON pgboss.job`:
+   - **On retry (`NEW.state = 'retry'`)**: Atomically resets the task in `tasks` to `status = 'pending'`, clears `worker_id = NULL`, and preserves the existing `progress`. It immediately emits a `pg_notify` event on `awty_task_events` with single-character event code `'d'`.
+   - **On final failure (`NEW.state = 'failed'`)**: When all retry attempts are exhausted, the trigger marks `tasks.status = 'failed'`, records `failure_reason = 'Worker died and retries exhausted (DB trigger sync)'`, sets `finished_at = COALESCE(finished_at, now())` (enabling retention purge by `PurgeHandler`), and emits `pg_notify` with event code `'f'`.
+
+3. **Client notification and UX**:
+   - The API server receives `'d'`, maps it to event kind `'pending'`, and broadcasts:
+     ```json
+     {"type":"pending","taskId":"...","progress":25}
+     ```
+   - The CLI client (`scripts/demo-client.mjs`) renders:
+     ```text
+     ⏳ WORKER LOST - RETRYING FROM 25% (QUEUED)
+     ```
+   - Connected users and operators immediately see that the worker died and that the task is queued awaiting a healthy worker. When a new worker starts up, it immediately claims the task and resumes forward from 25% with zero progress loss.
 
 ### Several workers
 

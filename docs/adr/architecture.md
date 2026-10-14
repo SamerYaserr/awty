@@ -84,6 +84,41 @@ If another worker takes over the task while the first worker is still running, t
 
 We chose 30 seconds for the heartbeat window to avoid false alarms under heavy load. If the database is busy for 10 seconds, workers should not be marked as dead by mistake. The window can be configured down to 10 seconds, which is the minimum supported by pg-boss.
 
+### 4.1 Zero-worker failover via PostgreSQL trigger (`pgboss_job_sync_trigger`)
+
+When one worker crashes while other workers are running, the surviving workers pick up the expired job and transition the task state. But what happens if **all workers crash simultaneously** or the worker deployment is scaled to zero?
+
+In that scenario, no worker processes exist to run `TaskConsumer`, claim retries, or execute `DeadLetterHandler`. If the system relied entirely on worker-level TypeScript code, tasks would remain permanently stuck in `processing`.
+
+To ensure complete resilience even when zero workers are running, AWTY handles failover at the storage layer:
+
+1. **Queue supervision by the API process**:
+   In `src/queue/pg-boss.factory.ts`, queue supervision is enabled for both workers and API instances (`supervise: role === 'worker' || role === 'api'`). When all workers are dead, the API process's pg-boss instance continues to run the background maintenance sweep every 10 seconds, detecting expired heartbeats via `failJobsByTimeout`.
+
+2. **The `pgboss_job_sync_trigger` database trigger**:
+   Implemented in migration `1760000000001-AddPgBossSyncTrigger.ts`, an atomic PostgreSQL trigger is attached to `pgboss.job`:
+   ```sql
+   CREATE TRIGGER pgboss_job_sync_trigger
+   AFTER INSERT OR UPDATE ON pgboss.job
+   FOR EACH ROW
+   WHEN (NEW.name = 'awty.task.process' AND NEW.state IN ('retry', 'failed'))
+   EXECUTE FUNCTION sync_task_state_from_pgboss();
+   ```
+   - **Why `AFTER INSERT OR UPDATE`?** In `pg-boss` v10, `failJobsByTimeout` handles job expiry using a CTE that executes `DELETE FROM job ... RETURNING *` followed by `INSERT INTO job`. A trigger configured only for `AFTER UPDATE` never fires on timeouts. Attaching to both `INSERT` and `UPDATE` ensures every state transition is captured.
+   - **Retry synchronization (`NEW.state = 'retry'`)**: The trigger atomically executes:
+     ```sql
+     UPDATE tasks
+     SET status = 'pending', worker_id = NULL, updated_at = now()
+     WHERE id = NEW.id AND status = 'processing'
+     RETURNING progress INTO saved_progress;
+     ```
+     It resets the task to `pending` (allowing any new worker to claim it upon recovery), clears the crashed `worker_id`, retains the existing `progress`, and emits `pg_notify('awty_task_events', ...)` with single-character event code `'d'`.
+   - **Failure synchronization (`NEW.state = 'failed'`)**: When pg-boss exhausts all retries, the trigger marks `tasks.status = 'failed'`, records `failure_reason = 'Worker died and retries exhausted (DB trigger sync)'`, timestamps `finished_at = COALESCE(finished_at, now())` (enabling retention purge by `PurgeHandler`), and emits `pg_notify` with event code `'f'`.
+
+3. **Realtime event protocol & deduplication**:
+   - Single-character code `'d'` maps to server message `{"type":"pending","taskId":"...","progress":X}`.
+   - To avoid spamming connected clients with redundant `pending` frames during the 10-second background `Reconciler` sweeps, `SubscriptionRegistry` tracks `lastKind?: TaskEventKind` alongside `lastProgress`, allowing state transitions to broadcast while deduplicating unchanged periodic sweeps.
+
 ### 5. Progress model
 
 Progress is calculated as:
@@ -187,7 +222,7 @@ A background job (`PurgeHandler`) runs periodically to delete completed tasks ol
 
 Verification relies on testing the full system against a live PostgreSQL 16 database across two complementary suites:
 
-1. **Automated End-to-End & Failure Mode Suite (`scripts/run-e2e-tests.mjs`)**: An automated test harness (`npm run test:e2e`) executing 37 scenarios across 6 phases. It asserts protocol conformance (HTTP 201/200/400/404, WS subscribe/progress/completed/failed/error/unsubscribe), multi-client fanout, reconnect snapshot recovery, database check constraints, security boundaries (payload limit, rate limits, ping-pong liveness), and architectural failure modes (heartbeat loss, worker attempt claim fencing, dead-letter queue exhaust, background state reconciler catchup, retention purge, and atomic transaction rollback).
+1. **Automated End-to-End & Failure Mode Suite (`scripts/run-e2e-tests.mjs`)**: An automated test harness (`npm run test:e2e`) executing 39 scenarios across 6 phases. It asserts protocol conformance (HTTP 201/200/400/404, WS subscribe/progress/completed/failed/error/unsubscribe), multi-client fanout, reconnect snapshot recovery, database check constraints, security boundaries (payload limit, rate limits, ping-pong liveness), and architectural failure modes (heartbeat loss, worker attempt claim fencing, dead-letter queue exhaust, zero-worker trigger failover synchronization, background state reconciler catchup, retention purge, and atomic transaction rollback).
 2. **High-Concurrency Load Generator (`scripts/load-test.mjs`)**: Tests throughput, batching efficiency, and WebSocket delivery under heavy load using public APIs (`npm run load-test`). It creates thousands of concurrent tasks, opens WebSocket subscriptions, verifies monotonic progress, and confirms end-to-end task completion.
 
 ## Failure modes
@@ -196,6 +231,7 @@ Verification relies on testing the full system against a live PostgreSQL 16 data
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Worker crashes while running a task                    | Heartbeats stop. After the timeout, the queue gives the job to another worker. The new worker resumes from the last saved progress.                                             |
 | Worker dies on its final attempt                       | The queue moves the job to the dead-letter queue. A handler marks the task as `failed` and notifies subscribers.                                                                |
+| All workers crash simultaneously and stay dead         | The API process supervises the queue. When the heartbeat expires, an atomic PostgreSQL trigger (`pgboss_job_sync_trigger`) syncs `pgboss.job` to `tasks`: retried jobs become `pending` (retaining progress) and exhausted jobs become `failed` (recording `finished_at`), emitting `NOTIFY` directly in PostgreSQL. |
 | Crash between creating task and queueing job           | Not possible: both are saved together in a single database transaction.                                                                                                         |
 | Worker pauses temporarily and resumes later            | The task attempt number was increased when another worker took over. The old worker's writes are rejected by the database, and it stops cleanly.                                |
 | Worker completes task in DB but dies before ending job | When the job is retried, the new worker sees the task is already `completed` and simply finishes the queue job.                                                                 |

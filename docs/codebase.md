@@ -107,6 +107,7 @@ This folder sets up and connects pg-boss (the job queue in PostgreSQL).
 | File | What it does | When to edit this file |
 | :--- | :--- | :--- |
 | [`migrations/1760000000000-CreateTasksTable.ts`](../src/database/migrations/1760000000000-CreateTasksTable.ts) | The SQL file that creates the `tasks` table with rules and indexes. | When you need to change the database structure, add a new migration here. |
+| [`migrations/1760000000001-AddPgBossSyncTrigger.ts`](../src/database/migrations/1760000000001-AddPgBossSyncTrigger.ts) | Creates the database trigger `pgboss_job_sync_trigger` on `pgboss.job` to automatically sync worker crash/dead-letter states to `tasks` when 0 workers are alive. | To modify database-level queue state synchronization or PL/pgSQL failover logic. |
 | [`data-source-options.ts`](../src/database/data-source-options.ts) | Sets up the TypeORM database connection options (URL, pool size, SSL). | To change database driver options or connection pooling. |
 | [`database.module.ts`](../src/database/database.module.ts) | Connects TypeORM to the app. | To change how TypeORM starts up. |
 
