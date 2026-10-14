@@ -13,6 +13,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
   | { type: 'progress'; taskId: string; progress: number }
+  | { type: 'pending'; taskId: string; progress: number }
   | { type: 'completed'; taskId: string }
   | { type: 'failed'; taskId: string }
   | { type: 'error'; taskId?: string; message: string };
@@ -23,6 +24,12 @@ export function toServerMessage(event: TaskEvent): ServerMessage {
       return { type: 'completed', taskId: event.taskId };
     case 'failed':
       return { type: 'failed', taskId: event.taskId };
+    case 'pending':
+      return {
+        type: 'pending',
+        taskId: event.taskId,
+        progress: event.progress,
+      };
     default:
       return {
         type: 'progress',

@@ -15,6 +15,8 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import WebSocket from 'ws';
+import { decodeEvents } from '../dist/events/task-event.js';
+import { toServerMessage } from '../dist/realtime/protocol.js';
 
 const { Client } = pg;
 const BASE_URL =
@@ -1321,6 +1323,171 @@ async function runPhase6() {
   } catch (err) {
     logFail(
       '6.4 Data retention purges expired records while preserving recent tasks',
+      err,
+    );
+  }
+
+  // Test 6.5: Zero-Worker Failover on Crash (pgboss retry -> tasks pending, worker_id NULL, progress preserved)
+  try {
+    const db = await getDbClient();
+    if (!db) {
+      logPass(
+        '6.5 Zero-worker failover: Trigger syncs pgboss retry to tasks pending',
+        'Skipped: direct DB port unreachable',
+      );
+    } else {
+      const listener = await getDbClient();
+      await listener.query('LISTEN awty_task_events');
+      const notifications = [];
+      listener.on('notification', (msg) => {
+        if (msg.channel === 'awty_task_events') {
+          notifications.push(JSON.parse(msg.payload));
+        }
+      });
+
+      const retryTaskId = randomUUID();
+      await db.query(
+        `INSERT INTO tasks (id, status, duration_seconds, progress, attempt, worker_id, started_at)
+         VALUES ($1, 'processing', 30, 45, 1, 'crashed-worker-1', now());`,
+        [retryTaskId],
+      );
+
+      await db.query(
+        `INSERT INTO pgboss.job (id, name, data, state, retry_limit, retry_count, start_after)
+         VALUES ($1, 'awty.task.process', $2, 'retry', 3, 1, now() + interval '60 seconds')
+         ON CONFLICT (name, id) DO UPDATE SET state = 'retry', start_after = now() + interval '60 seconds';`,
+        [retryTaskId, JSON.stringify({ taskId: retryTaskId })],
+      );
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      const res = await db.query(
+        `SELECT status, worker_id, progress FROM tasks WHERE id = $1;`,
+        [retryTaskId],
+      );
+      assert(res.rows.length === 1, 'Task row missing');
+      assert(
+        res.rows[0].status === 'pending',
+        `Expected pending, got ${res.rows[0].status}`,
+      );
+      assert(
+        res.rows[0].worker_id === null,
+        `Expected worker_id NULL, got ${res.rows[0].worker_id}`,
+      );
+      assert(
+        res.rows[0].progress === 45,
+        `Expected progress 45, got ${res.rows[0].progress}`,
+      );
+
+      const notify = notifications.find((n) => n[0]?.[0] === retryTaskId);
+      assert(notify !== undefined, 'No pg_notify received on retry');
+      assert(notify[0][1] === 'd', `Expected code 'd', got ${notify[0][1]}`);
+      assert(notify[0][2] === 45, `Expected progress 45, got ${notify[0][2]}`);
+
+      const decoded = decodeEvents(JSON.stringify(notify));
+      assert(
+        decoded[0]?.kind === 'pending',
+        `Expected decoded kind 'pending', got ${decoded[0]?.kind}`,
+      );
+      const serverMsg = toServerMessage(decoded[0]);
+      assert(
+        serverMsg.type === 'pending' && serverMsg.progress === 45,
+        'Invalid server message',
+      );
+
+      await db.query(`DELETE FROM tasks WHERE id = $1;`, [retryTaskId]);
+      await db.query(`DELETE FROM pgboss.job WHERE id = $1;`, [retryTaskId]);
+      await db.end();
+      await listener.end();
+
+      logPass(
+        '6.5 Zero-worker failover: Trigger syncs pgboss retry to tasks pending (worker_id cleared, progress preserved, code d emitted)',
+      );
+    }
+  } catch (err) {
+    logFail(
+      '6.5 Zero-worker failover: Trigger syncs pgboss retry to tasks pending',
+      err,
+    );
+  }
+
+  // Test 6.6: Zero-Worker Failover on Retries Exhausted (pgboss failed -> tasks failed, finished_at timestamped)
+  try {
+    const db = await getDbClient();
+    if (!db) {
+      logPass(
+        '6.6 Zero-worker failover: Trigger syncs pgboss failed to tasks failed',
+        'Skipped: direct DB port unreachable',
+      );
+    } else {
+      const listener = await getDbClient();
+      await listener.query('LISTEN awty_task_events');
+      const notifications = [];
+      listener.on('notification', (msg) => {
+        if (msg.channel === 'awty_task_events') {
+          notifications.push(JSON.parse(msg.payload));
+        }
+      });
+
+      const failedTaskId = randomUUID();
+      await db.query(
+        `INSERT INTO tasks (id, status, duration_seconds, progress, attempt, worker_id, started_at)
+         VALUES ($1, 'processing', 30, 70, 3, 'crashed-worker-2', now());`,
+        [failedTaskId],
+      );
+
+      await db.query(
+        `INSERT INTO pgboss.job (id, name, data, state, retry_limit, retry_count)
+         VALUES ($1, 'awty.task.process', $2, 'failed', 3, 3)
+         ON CONFLICT (name, id) DO UPDATE SET state = 'failed';`,
+        [failedTaskId, JSON.stringify({ taskId: failedTaskId })],
+      );
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      const res = await db.query(
+        `SELECT status, failure_reason, finished_at, progress FROM tasks WHERE id = $1;`,
+        [failedTaskId],
+      );
+      assert(res.rows.length === 1, 'Task row missing');
+      assert(
+        res.rows[0].status === 'failed',
+        `Expected failed, got ${res.rows[0].status}`,
+      );
+      assert(
+        res.rows[0].finished_at !== null,
+        'Expected non-null finished_at timestamp',
+      );
+      assert(
+        typeof res.rows[0].failure_reason === 'string',
+        'Expected failure_reason to be populated',
+      );
+
+      const notify = notifications.find((n) => n[0]?.[0] === failedTaskId);
+      assert(notify !== undefined, 'No pg_notify received on final failure');
+      assert(notify[0][1] === 'f', `Expected code 'f', got ${notify[0][1]}`);
+      assert(notify[0][2] === 70, `Expected progress 70, got ${notify[0][2]}`);
+
+      const decoded = decodeEvents(JSON.stringify(notify));
+      assert(
+        decoded[0]?.kind === 'failed',
+        `Expected decoded kind 'failed', got ${decoded[0]?.kind}`,
+      );
+      const serverMsg = toServerMessage(decoded[0]);
+      assert(serverMsg.type === 'failed', 'Invalid server message');
+
+      await db.query(`DELETE FROM tasks WHERE id = $1;`, [failedTaskId]);
+      await db.query(`DELETE FROM pgboss.job WHERE id = $1;`, [failedTaskId]);
+      await db.end();
+      await listener.end();
+
+      logPass(
+        '6.6 Zero-worker failover: Trigger syncs pgboss failed to tasks failed (finished_at recorded, failure_reason populated, code f emitted)',
+      );
+    }
+  } catch (err) {
+    logFail(
+      '6.6 Zero-worker failover: Trigger syncs pgboss failed to tasks failed',
       err,
     );
   }

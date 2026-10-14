@@ -4,7 +4,7 @@ export const TASK_EVENTS_CHANNEL = 'awty_task_events';
 
 export const MAX_EVENTS_PER_NOTIFICATION = 100;
 
-export type TaskEventKind = 'progress' | 'completed' | 'failed';
+export type TaskEventKind = 'progress' | 'completed' | 'failed' | 'pending';
 
 export interface TaskEvent {
   taskId: string;
@@ -16,6 +16,7 @@ const KIND_BY_CODE = new Map<string, TaskEventKind>([
   ['p', 'progress'],
   ['c', 'completed'],
   ['f', 'failed'],
+  ['d', 'pending'],
 ]);
 
 export function decodeEvents(payload: string): TaskEvent[] {
@@ -52,6 +53,8 @@ export function stateToEvent(state: TaskState): TaskEvent {
       return { taskId: state.id, kind: 'completed', progress: 100 };
     case 'failed':
       return { taskId: state.id, kind: 'failed', progress: state.progress };
+    case 'pending':
+      return { taskId: state.id, kind: 'pending', progress: state.progress };
     default:
       return { taskId: state.id, kind: 'progress', progress: state.progress };
   }

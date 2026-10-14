@@ -13,7 +13,7 @@ export function createBoss(config: AppConfig, role: QueueRole): PgBoss {
     max: config.queue.poolMax,
     application_name: `awty-${role}-queue`,
     migrate: role === 'migrate',
-    supervise: role === 'worker',
+    supervise: role === 'worker' || role === 'api',
     schedule: role === 'worker',
     monitorStateIntervalSeconds: 10,
     maintenanceIntervalSeconds: 10,

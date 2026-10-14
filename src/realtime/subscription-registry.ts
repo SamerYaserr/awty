@@ -6,7 +6,7 @@ import {
   toServerMessage,
   errorMessage,
 } from './protocol';
-import type { TaskEvent } from '../events/task-event';
+import type { TaskEvent, TaskEventKind } from '../events/task-event';
 
 export interface Subscriber {
   deliver(raw: string, droppable: boolean): void;
@@ -14,6 +14,7 @@ export interface Subscriber {
 
 interface Subscription {
   lastProgress: number;
+  lastKind?: TaskEventKind;
 }
 
 export class SubscriptionRegistry {
@@ -137,9 +138,23 @@ export class SubscriptionRegistry {
       this.remove(event.taskId, subscriber);
       return;
     }
+    if (
+      event.kind === 'pending' &&
+      subscription.lastKind === 'pending' &&
+      subscription.lastProgress === event.progress
+    ) {
+      return;
+    }
+    if (event.kind === 'pending') {
+      subscription.lastKind = 'pending';
+      subscription.lastProgress = event.progress;
+      this.safeDeliver(subscriber, encode(), false);
+      return;
+    }
     if (event.progress <= subscription.lastProgress) {
       return;
     }
+    subscription.lastKind = 'progress';
     subscription.lastProgress = event.progress;
     this.safeDeliver(subscriber, encode(), true);
   }

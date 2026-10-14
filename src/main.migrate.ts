@@ -22,13 +22,6 @@ async function main(): Promise<void> {
   try {
     await lock.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
 
-    const applied = await dataSource.runMigrations({ transaction: 'each' });
-    console.log(
-      applied.length > 0
-        ? `Applied migrations: ${applied.map((migration) => migration.name).join(', ')}`
-        : 'Database schema is up to date',
-    );
-
     const boss = createBoss(config, 'migrate');
     await boss.start();
     try {
@@ -37,6 +30,13 @@ async function main(): Promise<void> {
     } finally {
       await boss.stop({ graceful: false, timeout: 5000 });
     }
+
+    const applied = await dataSource.runMigrations({ transaction: 'each' });
+    console.log(
+      applied.length > 0
+        ? `Applied migrations: ${applied.map((migration) => migration.name).join(', ')}`
+        : 'Database schema is up to date',
+    );
   } finally {
     await lock
       .query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY])

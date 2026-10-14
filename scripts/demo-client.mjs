@@ -193,6 +193,15 @@ function follow(taskId) {
             log(
               `${bar}  ${colors.dim}(elapsed: ${elapsedSec}s)${colors.reset}`,
             );
+          } else if (message.type === 'pending') {
+            const bar = renderProgressBar(message.progress);
+            const statusLabel =
+              message.progress > 0
+                ? `${colors.yellow}⏳ WORKER LOST - RETRYING FROM ${message.progress}% (QUEUED)${colors.reset}`
+                : `${colors.dim}⏳ QUEUED (WAITING FOR WORKER)${colors.reset}`;
+            log(
+              `${bar}  ${statusLabel} ${colors.dim}(elapsed: ${elapsedSec}s)${colors.reset}`,
+            );
           } else if (message.type === 'completed') {
             const bar = renderProgressBar(100);
             log(
